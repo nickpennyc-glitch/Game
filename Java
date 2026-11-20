@@ -1,0 +1,2019 @@
+
+"use strict";
+
+// ============================================
+// TOON CLASH - GAME JAVASCRIPT
+// Stick fighters, combat, AI and online rooms
+// ============================================
+
+const canvas = document.getElementById("arena");
+const ctx = canvas.getContext("2d");
+
+const playerBar = document.getElementById("playerHealth");
+const enemyBar = document.getElementById("enemyHealth");
+const timerText = document.getElementById("timer");
+const message = document.getElementById("message");
+const roundLabel = document.getElementById("roundLabel");
+const restartButton = document.getElementById("restart");
+
+const WIDTH = canvas.width;
+const HEIGHT = canvas.height;
+const FLOOR = 438;
+const GRAVITY = 0.72;
+
+const keys = new Set();
+
+let gameState = "intro";
+let lastTime = 0;
+let elapsed = 0;
+
+let round = 1;
+let playerWins = 0;
+let enemyWins = 0;
+
+let shake = 0;
+let particles = [];
+
+let peer = null;
+let connection = null;
+
+let onlineMode = false;
+let onlineRole = "host";
+
+let remoteKeys = new Set();
+let lastNetSend = 0;
+let lastStateSend = 0;
+
+let roomCode = "";
+
+const onlineStatus = document.getElementById("onlineStatus");
+const roomInput = document.getElementById("roomInput");
+
+const createRoomButton = document.getElementById("createRoom");
+const joinRoomButton = document.getElementById("joinRoom");
+
+const PEER_OPTIONS = {
+    debug: 1
+};
+
+// ============================================
+// FIGHTER CREATION
+// ============================================
+
+function makeFighter(options) {
+    return {
+        name: options.name,
+
+        x: options.x,
+        y: FLOOR,
+
+        vx: 0,
+        vy: 0,
+
+        width: 68,
+        height: 116,
+
+        health: 100,
+
+        facing: options.facing,
+
+        color: options.color,
+        trim: options.trim,
+
+        isPlayer: options.isPlayer,
+
+        localControlled: false,
+        remoteJumpWasDown: false,
+
+        onGround: true,
+        blocking: false,
+
+        attack: null,
+
+        attackCooldown: 0,
+        hurtTime: 0,
+        invulnerable: 0,
+
+        walkCycle: 0,
+
+        aiThink: 0,
+        aiMove: 0,
+        aiAction: 0
+    };
+}
+
+let player;
+let enemy;
+
+let localFighter;
+let remoteFighter;
+
+let timeLeft = 60;
+
+// ============================================
+// ROUND RESET
+// ============================================
+
+function resetRound() {
+
+    const leftFighter = makeFighter({
+        name: "BOLT",
+        x: 245,
+        facing: 1,
+        color: "#31b9ed",
+        trim: "#ffdb57",
+        isPlayer: true
+    });
+
+    const rightFighter = makeFighter({
+        name: "BRAWLER",
+        x: 715,
+        facing: -1,
+        color: "#f15b82",
+        trim: "#ffd16a",
+        isPlayer: false
+    });
+
+    player = leftFighter;
+    enemy = rightFighter;
+
+    const localIsLeft =
+        !onlineMode || onlineRole === "host";
+
+    leftFighter.localControlled = localIsLeft;
+
+    rightFighter.localControlled =
+        onlineMode && !localIsLeft;
+
+    localFighter =
+        localIsLeft ? leftFighter : rightFighter;
+
+    remoteFighter =
+        localIsLeft ? rightFighter : leftFighter;
+
+    timeLeft = 60;
+    elapsed = 0;
+    particles = [];
+
+    updateHud();
+}
+
+// ============================================
+// START GAME
+// ============================================
+
+function startGame() {
+
+    onlineMode = false;
+
+    keys.clear();
+    remoteKeys.clear();
+
+    round = 1;
+
+    playerWins = 0;
+    enemyWins = 0;
+
+    roundLabel.textContent = "ROUND 1";
+
+    resetRound();
+
+    gameState = "playing";
+
+    message.classList.add("hidden");
+}
+
+// ============================================
+// ROUND WINNING
+// ============================================
+
+function nextRound(winner) {
+
+    if (winner === "player") {
+        playerWins++;
+    } else {
+        enemyWins++;
+    }
+
+    gameState = "roundEnd";
+
+    const text =
+        winner === "player"
+            ? "BOLT WINS THE ROUND!"
+            : "BRAWLER WINS THE ROUND!";
+
+    message.textContent = text;
+    message.classList.remove("hidden");
+
+    if (playerWins >= 2 || enemyWins >= 2) {
+
+        gameState = "matchEnd";
+
+        message.textContent =
+            playerWins >= 2
+                ? "YOU ARE THE CHAMPION!"
+                : "BRAWLER TAKES THE MATCH!";
+
+        return;
+    }
+
+    round++;
+
+    roundLabel.textContent = "ROUND " + round;
+
+    window.setTimeout(() => {
+
+        if (gameState !== "roundEnd") return;
+
+        resetRound();
+
+        gameState = "playing";
+
+        message.classList.add("hidden");
+
+    }, 1500);
+}
+
+// ============================================
+// HEALTH BAR
+// ============================================
+
+function updateHud() {
+
+    playerBar.style.width =
+        Math.max(0, player.health) + "%";
+
+    enemyBar.style.width =
+        Math.max(0, enemy.health) + "%";
+
+    timerText.textContent =
+        Math.ceil(timeLeft);
+}
+
+// ============================================
+// PARTICLE EFFECTS
+// ============================================
+
+function spawnBurst(x, y, color, amount = 10) {
+
+    for (let i = 0; i < amount; i++) {
+
+        const angle =
+            Math.random() * Math.PI * 2;
+
+        const speed =
+            1.5 + Math.random() * 5;
+
+        particles.push({
+
+            x,
+            y,
+
+            vx: Math.cos(angle) * speed,
+
+            vy: Math.sin(angle) * speed - 1,
+
+            life: 24 + Math.random() * 18,
+
+            color,
+
+            size: 3 + Math.random() * 5
+
+        });
+    }
+}
+
+// ============================================
+// CARTOON BLOOD EFFECT
+// ============================================
+
+function spawnBloodBurst(x, y, direction) {
+
+    const shades = [
+        "#e51d3b",
+        "#ff3654",
+        "#b90f32"
+    ];
+
+    for (let i = 0; i < 14; i++) {
+
+        const angle =
+            (Math.random() * 1.55 - 0.78) *
+            (direction || 1);
+
+        const speed =
+            2.2 + Math.random() * 5.2;
+
+        particles.push({
+
+            x: x + (Math.random() - 0.5) * 12,
+
+            y: y + (Math.random() - 0.5) * 10,
+
+            vx: Math.cos(angle) * speed,
+
+            vy:
+                -Math.abs(Math.sin(angle) * speed) -
+                Math.random() * 2,
+
+            life: 24 + Math.random() * 17,
+
+            color:
+                shades[
+                    Math.floor(Math.random() * shades.length)
+                ],
+
+            size: 2.5 + Math.random() * 4,
+
+            blood: true
+        });
+    }
+}
+
+// ============================================
+// ATTACK SYSTEM
+// ============================================
+
+function startAttack(fighter, type) {
+
+    if (
+        gameState !== "playing" ||
+        fighter.attackCooldown > 0 ||
+        fighter.hurtTime > 0
+    ) return;
+
+    fighter.blocking = false;
+
+    fighter.attack = {
+
+        type,
+
+        timer: type === "kick" ? 22 : 17,
+
+        duration: type === "kick" ? 22 : 17,
+
+        hit: false
+
+    };
+
+    fighter.attackCooldown =
+        type === "kick" ? 38 : 27;
+}
+
+// ============================================
+// JUMP SYSTEM
+// ============================================
+
+function jump(fighter) {
+
+    if (
+        fighter.onGround &&
+        gameState === "playing" &&
+        fighter.hurtTime <= 0
+    ) {
+
+        fighter.vy = -14.5;
+
+        fighter.onGround = false;
+
+        spawnBurst(
+            fighter.x,
+            FLOOR - 5,
+            "#ffffff",
+            5
+        );
+    }
+}
+
+// ============================================
+// HIT DETECTION
+// ============================================
+
+function attackDamage(attacker, defender) {
+
+    if (!attacker.attack || attacker.attack.hit) {
+        return;
+    }
+
+    const attack = attacker.attack;
+
+    const progress =
+        1 - attack.timer / attack.duration;
+
+    const active =
+        attack.type === "kick"
+            ? progress > 0.32 && progress < 0.76
+            : progress > 0.28 && progress < 0.72;
+
+    if (!active) return;
+
+    const distance =
+        Math.abs(attacker.x - defender.x);
+
+    const reach =
+        attack.type === "kick" ? 122 : 96;
+
+    const facingTarget =
+        Math.sign(defender.x - attacker.x) ===
+        attacker.facing;
+
+    if (
+        distance < reach &&
+        facingTarget &&
+        Math.abs(attacker.y - defender.y) < 45
+    ) {
+
+        attacker.attack.hit = true;
+
+        const blocked =
+            defender.blocking &&
+            defender.facing === -attacker.facing;
+
+        const damage =
+            blocked
+                ? 3
+                : attack.type === "kick"
+                    ? 14
+                    : 9;
+
+        defender.health =
+            Math.max(0, defender.health - damage);
+
+        defender.hurtTime = blocked ? 7 : 17;
+
+        defender.invulnerable = 12;
+
+        defender.vx +=
+            attacker.facing * (blocked ? 2 : 6);
+
+        if (!blocked) {
+            defender.vy = -3.5;
+        }
+
+        const hitX =
+            (attacker.x + defender.x) / 2;
+
+        if (blocked) {
+
+            spawnBurst(
+                hitX,
+                defender.y - 70,
+                "#a7e7ff",
+                6
+            );
+
+        } else {
+
+            spawnBloodBurst(
+                hitX,
+                defender.y - 76,
+                attacker.facing
+            );
+
+            spawnBurst(
+                hitX,
+                defender.y - 70,
+                "#ffe16b",
+                5
+            );
+        }
+
+        shake = blocked ? 2 : 6;
+
+        updateHud();
+
+        if (defender.health <= 0) {
+
+            nextRound(
+                attacker === player
+                    ? "player"
+                    : "enemy"
+            );
+        }
+    }
+}
+
+// ============================================
+// FIGHTER UPDATE
+// ============================================
+
+function updateFighter(fighter, opponent, dt) {
+
+    const step = dt / 16.6667;
+
+    fighter.attackCooldown =
+        Math.max(
+            0,
+            fighter.attackCooldown - step
+        );
+
+    fighter.hurtTime =
+        Math.max(0, fighter.hurtTime - step);
+
+    fighter.invulnerable =
+        Math.max(0, fighter.invulnerable - step);
+
+    fighter.facing =
+        opponent.x >= fighter.x ? 1 : -1;
+
+    // LOCAL PLAYER CONTROLS
+
+    if (fighter.localControlled) {
+
+        const left = keys.has("a");
+        const right = keys.has("d");
+
+        fighter.blocking =
+            keys.has("l") &&
+            fighter.hurtTime <= 0 &&
+            !fighter.attack;
+
+        if (
+            fighter.hurtTime <= 0 &&
+            !fighter.attack
+        ) {
+
+            fighter.vx = fighter.blocking
+                ? 0
+                : (right ? 4.2 : 0) -
+                  (left ? 4.2 : 0);
+        }
+
+        if (keys.has("j")) {
+            startAttack(fighter, "punch");
+        }
+
+        if (keys.has("k")) {
+            startAttack(fighter, "kick");
+        }
+
+    // REMOTE PLAYER CONTROLS
+
+    } else if (onlineMode) {
+
+        fighter.blocking =
+            remoteKeys.has("l") &&
+            fighter.hurtTime <= 0 &&
+            !fighter.attack;
+
+        if (
+            fighter.hurtTime <= 0 &&
+            !fighter.attack
+        ) {
+
+            const left = remoteKeys.has("a");
+            const right = remoteKeys.has("d");
+
+            fighter.vx = fighter.blocking
+                ? 0
+                : (right ? 4.2 : 0) -
+                  (left ? 4.2 : 0);
+        }
+
+        if (remoteKeys.has("j")) {
+            startAttack(fighter, "punch");
+        }
+
+        if (remoteKeys.has("k")) {
+            startAttack(fighter, "kick");
+        }
+
+        const jumpDown = remoteKeys.has("w");
+
+        if (
+            jumpDown &&
+            !fighter.remoteJumpWasDown &&
+            fighter.onGround
+        ) {
+            jump(fighter);
+        }
+
+        fighter.remoteJumpWasDown = jumpDown;
+
+    // COMPUTER AI
+
+    } else {
+
+        fighter.aiThink -= step;
+
+        if (fighter.aiThink <= 0) {
+
+            fighter.aiThink =
+                10 + Math.random() * 13;
+
+            const distance =
+                Math.abs(opponent.x - fighter.x);
+
+            fighter.aiMove =
+                distance > 145
+                    ? Math.sign(opponent.x - fighter.x)
+                    : Math.random() < 0.5
+                        ? -1
+                        : 1;
+
+            fighter.aiAction = Math.random();
+
+            fighter.blocking =
+                distance < 120 &&
+                Math.random() < 0.24;
+
+            if (
+                distance < 130 &&
+                fighter.aiAction > 0.35
+            ) {
+
+                startAttack(
+                    fighter,
+                    fighter.aiAction > 0.72
+                        ? "kick"
+                        : "punch"
+                );
+            }
+
+            if (
+                distance > 210 &&
+                Math.random() < 0.15
+            ) {
+                jump(fighter);
+            }
+        }
+
+        if (
+            fighter.hurtTime <= 0 &&
+            !fighter.attack
+        ) {
+
+            fighter.vx =
+                fighter.blocking
+                    ? 0
+                    : fighter.aiMove * 2.6;
+        }
+    }
+
+    // ATTACK ANIMATION
+
+    if (fighter.attack) {
+
+        fighter.attack.timer -= step;
+
+        fighter.vx *= 0.78;
+
+        attackDamage(fighter, opponent);
+
+        if (
+            fighter.attack &&
+            fighter.attack.timer <= 0
+        ) {
+            fighter.attack = null;
+        }
+    }
+
+    if (fighter.hurtTime > 0) {
+        fighter.vx *= 0.9;
+    }
+
+    // MOVEMENT
+
+    fighter.x += fighter.vx * step;
+
+    fighter.x = Math.max(
+        55,
+        Math.min(WIDTH - 55, fighter.x)
+    );
+
+    fighter.y += fighter.vy * step;
+
+    fighter.vy += GRAVITY * step;
+
+    if (fighter.y >= FLOOR) {
+
+        fighter.y = FLOOR;
+        fighter.vy = 0;
+        fighter.onGround = true;
+
+    } else {
+
+        fighter.onGround = false;
+    }
+
+    if (Math.abs(fighter.vx) > 0.4) {
+        fighter.walkCycle += step * 0.18;
+    }
+}
+
+// ============================================
+// PARTICLE UPDATE
+// ============================================
+
+function updateParticles(dt) {
+
+    const step = dt / 16.6667;
+
+    particles = particles.filter(
+        particle => particle.life > 0
+    );
+
+    for (const particle of particles) {
+
+        particle.x += particle.vx * step;
+        particle.y += particle.vy * step;
+
+        particle.vy += 0.18 * step;
+
+        particle.life -= step;
+    }
+}
+
+// ============================================
+// GAME UPDATE
+// ============================================
+
+function update(dt) {
+
+    // The host controls online match physics.
+
+    if (
+        onlineMode &&
+        onlineRole === "guest"
+    ) return;
+
+    if (gameState !== "playing") return;
+
+    elapsed += dt;
+
+    timeLeft = Math.max(
+        0,
+        timeLeft - dt / 1000
+    );
+
+    updateFighter(player, enemy, dt);
+
+    updateFighter(enemy, player, dt);
+
+    updateParticles(dt);
+
+    updateHud();
+
+    if (timeLeft <= 0) {
+
+        nextRound(
+            player.health >= enemy.health
+                ? "player"
+                : "enemy"
+        );
+    }
+}
+
+// ============================================
+// BACKGROUND DRAWING
+// ============================================
+
+function drawBackground() {
+
+    const sky = ctx.createLinearGradient(
+        0,
+        0,
+        0,
+        HEIGHT
+    );
+
+    sky.addColorStop(0, "#65c9ec");
+    sky.addColorStop(0.68, "#c2f0e9");
+    sky.addColorStop(0.69, "#e8bb75");
+    sky.addColorStop(1, "#b77a4e");
+
+    ctx.fillStyle = sky;
+
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+    // Sun
+
+    ctx.fillStyle = "#fff7cf";
+
+    ctx.beginPath();
+
+    ctx.arc(
+        780,
+        95,
+        42,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fill();
+
+    // Clouds
+
+    drawCloud(150, 105, 1);
+    drawCloud(490, 72, 0.75);
+    drawCloud(880, 175, 0.8);
+
+    // Mountains
+
+    ctx.fillStyle = "#5eaa84";
+
+    ctx.beginPath();
+
+    ctx.moveTo(0, 340);
+
+    ctx.quadraticCurveTo(
+        170,
+        240,
+        340,
+        340
+    );
+
+    ctx.quadraticCurveTo(
+        540,
+        245,
+        720,
+        340
+    );
+
+    ctx.quadraticCurveTo(
+        850,
+        275,
+        960,
+        325
+    );
+
+    ctx.lineTo(960, 438);
+    ctx.lineTo(0, 438);
+
+    ctx.closePath();
+    ctx.fill();
+
+    // Ground
+
+    ctx.fillStyle = "#e5a75f";
+
+    ctx.fillRect(
+        0,
+        438,
+        WIDTH,
+        102
+    );
+
+    ctx.fillStyle = "#f4cb7d";
+
+    for (let x = 0; x < WIDTH; x += 52) {
+
+        ctx.fillRect(
+            x + 8,
+            455 + (x % 3) * 7,
+            24,
+            4
+        );
+    }
+
+    ctx.fillStyle = "#7b4b43";
+
+    ctx.fillRect(
+        0,
+        530,
+        WIDTH,
+        10
+    );
+}
+
+// ============================================
+// CLOUD DRAWING
+// ============================================
+
+function drawCloud(x, y, scale) {
+
+    ctx.save();
+
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+
+    ctx.fillStyle = "#ffffffcc";
+
+    ctx.beginPath();
+
+    ctx.arc(-25, 5, 22, 0, Math.PI * 2);
+    ctx.arc(0, -7, 29, 0, Math.PI * 2);
+    ctx.arc(30, 5, 22, 0, Math.PI * 2);
+
+    ctx.fill();
+
+    ctx.restore();
+}
+
+// ============================================
+// STICK FIGHTER DRAWING
+// ============================================
+
+function drawFighter(f) {
+
+    ctx.save();
+
+    ctx.translate(f.x, f.y);
+
+    ctx.scale(f.facing, 1);
+
+    const bob =
+        f.onGround
+            ? Math.sin(f.walkCycle) * 2
+            : 0;
+
+    const hurt = f.hurtTime > 0;
+
+    const ink = "#17172b";
+
+    const suit =
+        hurt ? "#fff2a6" : f.color;
+
+    const attack = f.attack;
+
+    const kickPose =
+        attack &&
+        attack.type === "kick" &&
+        attack.timer < attack.duration * 0.75;
+
+    const punchPose =
+        attack &&
+        attack.type === "punch" &&
+        attack.timer < attack.duration * 0.75;
+
+    ctx.translate(0, bob);
+
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    // Shadow
+
+    ctx.fillStyle = "#523c43";
+
+    ctx.beginPath();
+
+    ctx.ellipse(
+        0,
+        0,
+        31,
+        7,
+        0,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fill();
+
+    // Legs
+
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 13;
+
+    if (kickPose) {
+
+        ctx.beginPath();
+
+        ctx.moveTo(0, -39);
+        ctx.lineTo(50, -47);
+
+        ctx.stroke();
+
+        ctx.strokeStyle = f.trim;
+        ctx.lineWidth = 9;
+
+        ctx.beginPath();
+
+        ctx.moveTo(45, -47);
+        ctx.lineTo(62, -47);
+
+        ctx.stroke();
+
+        ctx.strokeStyle = ink;
+        ctx.lineWidth = 13;
+
+        ctx.beginPath();
+
+        ctx.moveTo(-2, -39);
+        ctx.lineTo(-8, -8);
+
+        ctx.stroke();
+
+    } else {
+
+        const stride =
+            Math.sin(f.walkCycle) * 8;
+
+        ctx.beginPath();
+
+        ctx.moveTo(-7, -42);
+        ctx.lineTo(-13 + stride, -8);
+
+        ctx.moveTo(7, -42);
+        ctx.lineTo(13 - stride, -8);
+
+        ctx.stroke();
+    }
+
+    // Boots
+
+    ctx.strokeStyle = f.trim;
+    ctx.lineWidth = 8;
+
+    ctx.beginPath();
+
+    ctx.moveTo(-19, -7);
+    ctx.lineTo(-7, -7);
+
+    ctx.moveTo(7, -7);
+    ctx.lineTo(20, -7);
+
+    ctx.stroke();
+
+    // Torso
+
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 18;
+
+    ctx.beginPath();
+
+    ctx.moveTo(0, -91);
+    ctx.lineTo(0, -42);
+
+    ctx.stroke();
+
+    ctx.strokeStyle = suit;
+    ctx.lineWidth = 12;
+
+    ctx.beginPath();
+
+    ctx.moveTo(0, -88);
+    ctx.lineTo(0, -48);
+
+    ctx.stroke();
+
+    // Chest stripe
+
+    ctx.strokeStyle = f.trim;
+    ctx.lineWidth = 6;
+
+    ctx.beginPath();
+
+    ctx.moveTo(-8, -70);
+    ctx.lineTo(8, -70);
+
+    ctx.stroke();
+
+    // Arms
+
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 12;
+
+    if (punchPose) {
+
+        ctx.beginPath();
+
+        ctx.moveTo(0, -82);
+        ctx.lineTo(49, -84);
+
+        ctx.stroke();
+
+        ctx.fillStyle = f.trim;
+
+        ctx.beginPath();
+
+        ctx.arc(
+            54,
+            -84,
+            11,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+
+    } else {
+
+        ctx.beginPath();
+
+        ctx.moveTo(0, -82);
+
+        ctx.lineTo(
+            f.blocking ? 26 : 28,
+            f.blocking ? -105 : -58
+        );
+
+        ctx.moveTo(0, -82);
+        ctx.lineTo(-27, -58);
+
+        ctx.stroke();
+
+        ctx.fillStyle = f.trim;
+
+        ctx.beginPath();
+
+        ctx.arc(
+            f.blocking ? 26 : 28,
+            f.blocking ? -105 : -58,
+            9,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.arc(
+            -27,
+            -58,
+            9,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+    }
+
+    // Head
+
+    ctx.fillStyle = "#fffdf5";
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 5;
+
+    ctx.beginPath();
+
+    ctx.arc(
+        0,
+        -119,
+        25,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fill();
+    ctx.stroke();
+
+    // Hair
+
+    ctx.fillStyle = f.color;
+
+    ctx.beginPath();
+
+    ctx.arc(
+        -2,
+        -130,
+        23,
+        Math.PI,
+        Math.PI * 2
+    );
+
+    ctx.lineTo(20, -121);
+
+    ctx.quadraticCurveTo(
+        0,
+        -143,
+        -22,
+        -121
+    );
+
+    ctx.closePath();
+    ctx.fill();
+
+    // Eyes
+
+    ctx.fillStyle = ink;
+
+    ctx.beginPath();
+
+    ctx.arc(8, -119, 3.5, 0, Math.PI * 2);
+    ctx.arc(-5, -119, 3.5, 0, Math.PI * 2);
+
+    ctx.fill();
+
+    // Smile
+
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 2.5;
+
+    ctx.beginPath();
+
+    ctx.arc(
+        2,
+        -109,
+        7,
+        0.15,
+        1.5
+    );
+
+    ctx.stroke();
+
+    // Block shield
+
+    if (f.blocking) {
+
+        ctx.strokeStyle = "#a8edff";
+        ctx.lineWidth = 5;
+
+        ctx.beginPath();
+
+        ctx.arc(
+            0,
+            -76,
+            54,
+            -1.25,
+            1.25
+        );
+
+        ctx.stroke();
+    }
+
+    ctx.restore();
+}
+
+// ============================================
+// PARTICLE DRAWING
+// ============================================
+
+function drawParticles() {
+
+    for (const p of particles) {
+
+        ctx.globalAlpha =
+            Math.max(0, p.life / 35);
+
+        ctx.fillStyle = p.color;
+
+        ctx.beginPath();
+
+        if (p.blood) {
+
+            ctx.ellipse(
+                p.x,
+                p.y,
+                p.size * 0.72,
+                p.size * 1.35,
+                Math.atan2(p.vy, p.vx),
+                0,
+                Math.PI * 2
+            );
+
+        } else {
+
+            ctx.arc(
+                p.x,
+                p.y,
+                p.size,
+                0,
+                Math.PI * 2
+            );
+        }
+
+        ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+}
+
+// ============================================
+// MAIN DRAW FUNCTION
+// ============================================
+
+function draw() {
+
+    ctx.save();
+
+    if (shake > 0) {
+
+        ctx.translate(
+            (Math.random() - 0.5) * shake,
+            (Math.random() - 0.5) * shake
+        );
+
+        shake *= 0.82;
+
+        if (shake < 0.3) {
+            shake = 0;
+        }
+    }
+
+    drawBackground();
+
+    if (player && enemy) {
+
+        drawFighter(player);
+        drawFighter(enemy);
+    }
+
+    drawParticles();
+
+    ctx.restore();
+}
+
+// ============================================
+// GAME LOOP
+// ============================================
+
+function loop(timestamp) {
+
+    const dt = Math.min(
+        34,
+        timestamp - (lastTime || timestamp)
+    );
+
+    lastTime = timestamp;
+
+    update(dt);
+
+    sendOnlineInput(timestamp);
+
+    sendOnlineState(timestamp);
+
+    draw();
+
+    requestAnimationFrame(loop);
+}
+
+// ============================================
+// KEYBOARD CONTROLS
+// ============================================
+
+function setKey(event, down) {
+
+    const raw = event.key.toLowerCase();
+
+    const aliases = {
+        arrowleft: "a",
+        arrowright: "d",
+        arrowup: "w",
+        " ": "w"
+    };
+
+    const key = aliases[raw] || raw;
+
+    const supported = [
+        "a",
+        "d",
+        "w",
+        "j",
+        "k",
+        "l"
+    ];
+
+    if (supported.includes(key)) {
+
+        event.preventDefault();
+
+        if (down) {
+            keys.add(key);
+        } else {
+            keys.delete(key);
+        }
+    }
+
+    if (
+        down &&
+        key === "w" &&
+        localFighter &&
+        (!onlineMode || onlineRole === "host")
+    ) {
+        jump(localFighter);
+    }
+}
+
+// ============================================
+// ONLINE STATUS
+// ============================================
+
+function setOnlineStatus(text) {
+    onlineStatus.textContent = text;
+}
+
+// ============================================
+// NETWORK DATA
+// ============================================
+
+function packFighter(fighter) {
+
+    return {
+
+        x: fighter.x,
+        y: fighter.y,
+
+        vx: fighter.vx,
+        vy: fighter.vy,
+
+        health: fighter.health,
+
+        facing: fighter.facing,
+
+        blocking: fighter.blocking,
+
+        attack: fighter.attack
+            ? { ...fighter.attack }
+            : null,
+
+        hurtTime: fighter.hurtTime,
+
+        invulnerable: fighter.invulnerable,
+
+        onGround: fighter.onGround,
+
+        walkCycle: fighter.walkCycle
+    };
+}
+
+function applyFighterSnapshot(fighter, state) {
+
+    if (!state) return;
+
+    fighter.x = state.x;
+    fighter.y = state.y;
+
+    fighter.vx = state.vx;
+    fighter.vy = state.vy;
+
+    fighter.health = state.health;
+
+    fighter.facing = state.facing;
+
+    fighter.blocking = state.blocking;
+
+    fighter.attack = state.attack;
+
+    fighter.hurtTime = state.hurtTime;
+
+    fighter.invulnerable = state.invulnerable;
+
+    fighter.onGround = state.onGround;
+
+    fighter.walkCycle = state.walkCycle;
+}
+
+// ============================================
+// SEND GAME STATE
+// ============================================
+
+function sendOnlineState(timestamp, force = false) {
+
+    if (
+        !onlineMode ||
+        onlineRole !== "host" ||
+        !connection ||
+        !connection.open
+    ) return;
+
+    if (
+        !force &&
+        timestamp - lastStateSend < 50
+    ) return;
+
+    lastStateSend = timestamp;
+
+    const state = {
+
+        left: packFighter(player),
+
+        right: packFighter(enemy),
+
+        timeLeft,
+
+        round,
+
+        playerWins,
+
+        enemyWins,
+
+        gameState,
+
+        message: message.textContent,
+
+        messageHidden:
+            message.classList.contains("hidden"),
+
+        particles: particles.slice(-55).map(p => ({
+
+            x: p.x,
+            y: p.y,
+
+            vx: p.vx,
+            vy: p.vy,
+
+            life: p.life,
+
+            color: p.color,
+
+            size: p.size,
+
+            blood: !!p.blood
+
+        }))
+    };
+
+    connection.send({
+        type: "state",
+        state
+    });
+}
+
+// ============================================
+// RECEIVE GAME STATE
+// ============================================
+
+function applyOnlineState(state) {
+
+    if (
+        onlineRole !== "guest" ||
+        !state
+    ) return;
+
+    applyFighterSnapshot(player, state.left);
+
+    applyFighterSnapshot(enemy, state.right);
+
+    timeLeft = state.timeLeft;
+
+    round = state.round;
+
+    playerWins = state.playerWins;
+
+    enemyWins = state.enemyWins;
+
+    gameState = state.gameState;
+
+    roundLabel.textContent =
+        "ROUND " + round;
+
+    message.textContent =
+        state.message || "";
+
+    if (state.messageHidden) {
+        message.classList.add("hidden");
+    } else {
+        message.classList.remove("hidden");
+    }
+
+    particles = Array.isArray(state.particles)
+        ? state.particles
+        : [];
+
+    updateHud();
+}
+
+// ============================================
+// CLEAR CONNECTION
+// ============================================
+
+function clearPeerConnection() {
+
+    onlineMode = false;
+
+    remoteKeys.clear();
+
+    if (connection) {
+
+        const oldConnection = connection;
+
+        connection = null;
+
+        oldConnection.close();
+    }
+
+    if (peer) {
+
+        const oldPeer = peer;
+
+        peer = null;
+
+        oldPeer.destroy();
+    }
+}
+
+// ============================================
+// PEERJS ERROR HANDLING
+// ============================================
+
+function handlePeerError(error) {
+
+    const type =
+        error && error.type
+            ? error.type
+            : "unknown";
+
+    if (type === "unavailable-id") {
+
+        setOnlineStatus(
+            "That room code is already in use. Create another."
+        );
+
+    } else if (type === "peer-unavailable") {
+
+        setOnlineStatus(
+            "Room not found. Check the code and make sure the host is online."
+        );
+
+    } else if (
+        type === "network" ||
+        type === "server-error" ||
+        type === "socket-error"
+    ) {
+
+        setOnlineStatus(
+            "Could not reach PeerJS. Check your internet connection and try again."
+        );
+
+    } else if (type === "webrtc") {
+
+        setOnlineStatus(
+            "A direct connection failed. This network may need a TURN relay."
+        );
+
+    } else {
+
+        setOnlineStatus(
+            "Connection error: " + type
+        );
+    }
+}
+
+// ============================================
+// PEER CONNECTION
+// ============================================
+
+function setupPeerConnection(conn) {
+
+    if (connection && connection !== conn) {
+
+        conn.close();
+
+        return;
+    }
+
+    connection = conn;
+
+    conn.on("open", () => {
+
+        if (connection !== conn) return;
+
+        onlineMode = true;
+
+        keys.clear();
+        remoteKeys.clear();
+
+        resetRound();
+
+        round = 1;
+
+        playerWins = 0;
+        enemyWins = 0;
+
+        gameState = "playing";
+
+        message.textContent = "FIGHT!";
+
+        message.classList.remove("hidden");
+
+        if (onlineRole === "host") {
+
+            setOnlineStatus(
+                "Friend connected! You are BOLT (left)."
+            );
+
+            sendOnlineState(
+                performance.now(),
+                true
+            );
+
+        } else {
+
+            setOnlineStatus(
+                "Connected! You are BRAWLER (right)."
+            );
+        }
+    });
+
+    conn.on("data", data => {
+
+        if (
+            connection !== conn ||
+            !data ||
+            typeof data !== "object"
+        ) return;
+
+        // Guest input goes to the host.
+
+        if (
+            onlineRole === "host" &&
+            data.type === "input"
+        ) {
+
+            const allowed = new Set([
+                "a", "d", "w",
+                "j", "k", "l"
+            ]);
+
+            const safeKeys =
+                Array.isArray(data.keys)
+                    ? data.keys.filter(
+                        key => allowed.has(key)
+                    )
+                    : [];
+
+            remoteKeys = new Set(safeKeys);
+        }
+
+        // Host state goes to guest.
+
+        if (
+            onlineRole === "guest" &&
+            data.type === "state"
+        ) {
+
+            applyOnlineState(data.state);
+        }
+    });
+
+    conn.on("close", () => {
+
+        if (connection !== conn) return;
+
+        connection = null;
+
+        onlineMode = false;
+
+        remoteKeys.clear();
+
+        gameState = "intro";
+
+        message.textContent = "FRIEND LEFT";
+
+        message.classList.remove("hidden");
+
+        setOnlineStatus(
+            "Your friend disconnected. Create or join another room."
+        );
+    });
+
+    conn.on("error", () => {
+
+        if (connection === conn) {
+
+            setOnlineStatus(
+                "The peer connection was interrupted."
+            );
+        }
+    });
+}
+
+// ============================================
+// CREATE ROOM
+// ============================================
+
+function createRoom() {
+
+    clearPeerConnection();
+
+    onlineRole = "host";
+
+    roomCode = "TC" + Array.from(
+        { length: 6 },
+        () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[
+            Math.floor(Math.random() * 32)
+        ]
+    ).join("");
+
+    if (typeof Peer === "undefined") {
+
+        setOnlineStatus(
+            "PeerJS did not load. Check your internet connection and reload."
+        );
+
+        return;
+    }
+
+    setOnlineStatus("Creating your room...");
+
+    peer = new Peer(
+        roomCode,
+        PEER_OPTIONS
+    );
+
+    peer.on("open", id => {
+
+        roomCode = id;
+
+        roomInput.value = id;
+
+        setOnlineStatus(
+            "Room " + id + " created. Share the code with your friend."
+        );
+    });
+
+    peer.on("connection", conn => {
+
+        if (connection) {
+
+            conn.close();
+
+            return;
+        }
+
+        setupPeerConnection(conn);
+    });
+
+    peer.on("error", handlePeerError);
+
+    peer.on("disconnected", () => {
+
+        setOnlineStatus(
+            "PeerJS directory disconnected. Recreate the room to continue."
+        );
+    });
+}
+
+// ============================================
+// JOIN ROOM
+// ============================================
+
+function joinRoom() {
+
+    clearPeerConnection();
+
+    const code = roomInput.value
+        .trim()
+        .toUpperCase();
+
+    if (!/^TC[A-Z0-9]{6}$/.test(code)) {
+
+        setOnlineStatus(
+            "Enter the 8-character room code, including TC."
+        );
+
+        return;
+    }
+
+    if (typeof Peer === "undefined") {
+
+        setOnlineStatus(
+            "PeerJS did not load. Check your internet connection and reload."
+        );
+
+        return;
+    }
+
+    onlineRole = "guest";
+
+    roomCode = code;
+
+    setOnlineStatus(
+        "Looking for room " + code + "..."
+    );
+
+    peer = new Peer(
+        undefined,
+        PEER_OPTIONS
+    );
+
+    peer.on("open", () => {
+
+        if (!peer || peer.destroyed) return;
+
+        const conn = peer.connect(
+            code,
+            { reliable: true }
+        );
+
+        setupPeerConnection(conn);
+    });
+
+    peer.on("error", handlePeerError);
+
+    peer.on("disconnected", () => {
+
+        setOnlineStatus(
+            "PeerJS directory disconnected. Try joining again."
+        );
+    });
+}
+
+// ============================================
+// SEND PLAYER INPUT
+// ============================================
+
+function sendOnlineInput(timestamp) {
+
+    if (
+        !onlineMode ||
+        onlineRole !== "guest" ||
+        gameState !== "playing" ||
+        !connection ||
+        !connection.open
+    ) return;
+
+    if (timestamp - lastNetSend < 35) return;
+
+    lastNetSend = timestamp;
+
+    const controls = [
+        "a", "d", "w",
+        "j", "k", "l"
+    ];
+
+    connection.send({
+
+        type: "input",
+
+        keys: controls.filter(
+            key => keys.has(key)
+        )
+    });
+}
+
+// ============================================
+// BUTTON EVENTS
+// ============================================
+
+createRoomButton.addEventListener(
+    "click",
+    createRoom
+);
+
+joinRoomButton.addEventListener(
+    "click",
+    joinRoom
+);
+
+window.addEventListener(
+    "keydown",
+    event => setKey(event, true)
+);
+
+window.addEventListener(
+    "keyup",
+    event => setKey(event, false)
+);
+
+restartButton.addEventListener(
+    "click",
+    () => {
+
+        clearPeerConnection();
+
+        startGame();
+
+        setOnlineStatus(
+            "CPU match started. Create a room to play with a friend."
+        );
+    }
+);
+
+// ============================================
+// MOBILE TOUCH CONTROLS
+// ============================================
+
+document.querySelectorAll(
+    ".mobile-controls button"
+).forEach(button => {
+
+    const key = button.dataset.key;
+
+    const press = event => {
+
+        event.preventDefault();
+
+        keys.add(key);
+
+        if (
+            key === "w" &&
+            localFighter &&
+            (!onlineMode || onlineRole === "host")
+        ) {
+            jump(localFighter);
+        }
+    };
+
+    const release = event => {
+
+        event.preventDefault();
+
+        keys.delete(key);
+    };
+
+    button.addEventListener(
+        "pointerdown",
+        press
+    );
+
+    button.addEventListener(
+        "pointerup",
+        release
+    );
+
+    button.addEventListener(
+        "pointerleave",
+        release
+    );
+
+    button.addEventListener(
+        "pointercancel",
+        release
+    );
+});
+
+// ============================================
+// INITIALISE GAME
+// ============================================
+
+resetRound();
+
+requestAnimationFrame(loop);
