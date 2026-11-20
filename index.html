@@ -1,0 +1,1522 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Toon Clash — Cartoon Fighting Game</title>
+<style>
+:root {
+  color-scheme: dark;
+  --ink: #17172b;
+  --panel: #29294a;
+  --pink: #ff5e8a;
+  --blue: #55c8ff;
+  --gold: #ffd45c;
+  --white: #fff9ed;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: #111126;
+  color: var(--white);
+  font-family: "Trebuchet MS", Arial, sans-serif;
+}
+body {
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+.game-shell {
+  width: min(1100px, 100%);
+  border: 5px solid #080817;
+  border-radius: 22px;
+  overflow: hidden;
+  background: var(--panel);
+  box-shadow: 0 18px 0 #080817, 0 24px 55px #0009;
+}
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 20px;
+  background: linear-gradient(90deg, #34345d, #22223e);
+  border-bottom: 3px solid #111126;
+}
+.logo {
+  font-size: clamp(20px, 4vw, 30px);
+  font-weight: 1000;
+  letter-spacing: 2px;
+  color: var(--gold);
+  text-shadow: 3px 3px 0 #9c3d62;
+}
+.round-label {
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: #111126;
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+.arena-wrap {
+  position: relative;
+  background: #81d8ef;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: #8bdff2;
+}
+.hud {
+  position: absolute;
+  inset: 16px 18px auto;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  gap: 14px;
+  pointer-events: none;
+}
+.fighter-hud { min-width: 0; }
+.fighter-hud.right { text-align: right; }
+.fighter-name {
+  margin-bottom: 6px;
+  color: white;
+  font-size: clamp(12px, 2vw, 17px);
+  font-weight: 1000;
+  letter-spacing: 1px;
+  text-shadow: 2px 2px 0 #222;
+}
+.health-track {
+  height: 20px;
+  padding: 3px;
+  overflow: hidden;
+  background: #211d38;
+  border: 2px solid white;
+  border-radius: 5px;
+  box-shadow: 0 3px 0 #2228;
+}
+.health-fill {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #78ef75, #d6ff72);
+  transition: width .18s ease;
+}
+.right .health-fill {
+  margin-left: auto;
+  background: linear-gradient(90deg, #ffbd57, #ff5b7c);
+}
+.timer {
+  min-width: 58px;
+  padding: 7px 10px;
+  text-align: center;
+  border: 3px solid white;
+  border-radius: 10px;
+  background: #28264a;
+  font-size: 22px;
+  font-weight: 1000;
+  box-shadow: 0 4px 0 #17172b;
+}
+.message {
+  position: absolute;
+  left: 50%;
+  top: 43%;
+  transform: translate(-50%, -50%);
+  width: max-content;
+  max-width: 90%;
+  padding: 12px 22px;
+  border: 4px solid white;
+  border-radius: 14px;
+  background: #272447eF;
+  color: var(--gold);
+  font-size: clamp(20px, 4vw, 36px);
+  font-weight: 1000;
+  text-align: center;
+  text-shadow: 3px 3px #111;
+  box-shadow: 0 7px 0 #1118;
+  pointer-events: none;
+}
+.message.hidden { display: none; }
+.bottom-panel {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 18px;
+  align-items: center;
+  padding: 14px 18px;
+  background: #29294a;
+  border-top: 3px solid #111126;
+}
+.instructions {
+  color: #d8d8f2;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.instructions strong { color: var(--gold); }
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 11px 16px;
+  color: #201b35;
+  background: var(--gold);
+  font: inherit;
+  font-weight: 1000;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #b17c36;
+}
+button:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #b17c36;
+}
+.mobile-controls {
+  display: none;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  padding: 12px;
+  background: #1d1d36;
+}
+.mobile-controls button {
+  padding: 13px 4px;
+  touch-action: none;
+  user-select: none;
+}
+@media (max-width: 650px) {
+  body { padding: 5px; }
+  .game-shell { border-width: 3px; border-radius: 12px; }
+  .topbar { padding: 9px 12px; }
+  .hud { inset: 9px 9px auto; gap: 7px; }
+  .health-track { height: 15px; }
+  .timer { min-width: 42px; padding: 4px; font-size: 17px; }
+  .bottom-panel { grid-template-columns: 1fr; gap: 10px; }
+  .mobile-controls { display: grid; }
+  .instructions { font-size: 11px; }
+}
+.online-panel {
+  padding: 14px 18px 16px;
+  background: #20203b;
+  border-top: 2px solid #111126;
+}
+.online-heading {
+  margin-bottom: 9px;
+  color: #ffe16b;
+  font-size: 14px;
+  font-weight: 1000;
+  letter-spacing: 1.5px;
+}
+.online-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.online-row input {
+  width: 140px;
+  min-width: 100px;
+  border: 2px solid #7777a8;
+  border-radius: 9px;
+  padding: 9px 10px;
+  background: #111126;
+  color: white;
+  font: inherit;
+  font-weight: 900;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+.online-status {
+  margin-top: 9px;
+  color: #c8eaff;
+  font-size: 13px;
+}
+.online-note {
+  margin-top: 5px;
+  color: #9999bb;
+  font-size: 11px;
+}
+@media (max-width: 650px) {
+  .online-panel { padding: 11px; }
+  .online-row input { flex: 1; }
+}
+</style>
+</head>
+<body>
+<main class="game-shell">
+  <header class="topbar">
+    <div class="logo">TOON CLASH</div>
+    <div class="round-label" id="roundLabel">ROUND 1</div>
+  </header>
+  <section class="arena-wrap">
+    <canvas id="arena" width="960" height="540"
+      aria-label="Cartoon fighting arena"></canvas>
+    <div class="hud">
+      <div class="fighter-hud">
+        <div class="fighter-name">BOLT</div>
+        <div class="health-track">
+          <div class="health-fill" id="playerHealth"></div>
+        </div>
+      </div>
+      <div class="timer" id="timer">60</div>
+      <div class="fighter-hud right">
+        <div class="fighter-name">BRAWLER</div>
+        <div class="health-track">
+          <div class="health-fill" id="enemyHealth"></div>
+        </div>
+      </div>
+    </div>
+    <div class="message" id="message">READY?</div>
+  </section>
+  <section class="bottom-panel">
+    <div class="instructions">
+      <strong>MOVE:</strong> A / D or ← / → &nbsp;
+      <strong>JUMP:</strong> W / ↑ / Space<br>
+      <strong>PUNCH:</strong> J &nbsp;
+      <strong>KICK:</strong> K &nbsp;
+      <strong>BLOCK:</strong> L
+      <br>Land hits, dodge the rival, and win two rounds!
+    </div>
+    <button id="restart">PLAY VS CPU</button>
+  </section>
+  <section class="online-panel">
+    <div class="online-heading">PLAY WITH A FRIEND</div>
+    <div class="online-row">
+      <button id="createRoom">CREATE ROOM</button>
+      <input id="roomInput" maxlength="8"
+        placeholder="ROOM CODE" aria-label="Room code">
+      <button id="joinRoom">JOIN ROOM</button>
+    </div>
+    <div class="online-status" id="onlineStatus">
+      Create a room code and share it with a friend.
+      Both players need an internet connection.
+    </div>
+    <div class="online-note">
+      Peer-to-peer multiplayer uses PeerJS for connection setup.
+      Host this HTML on an HTTPS static site for friends to join from anywhere.
+    </div>
+  </section>
+  <section class="mobile-controls" aria-label="Touch controls">
+    <button data-key="a">LEFT</button>
+    <button data-key="d">RIGHT</button>
+    <button data-key="w">JUMP</button>
+    <button data-key="j">PUNCH</button>
+    <button data-key="k">KICK</button>
+    <button data-key="l">BLOCK</button>
+  </section>
+</main>
+
+<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<script>
+"use strict";
+
+const canvas = document.getElementById("arena");
+const ctx = canvas.getContext("2d");
+const playerBar = document.getElementById("playerHealth");
+const enemyBar = document.getElementById("enemyHealth");
+const timerText = document.getElementById("timer");
+const message = document.getElementById("message");
+const roundLabel = document.getElementById("roundLabel");
+const restartButton = document.getElementById("restart");
+
+const WIDTH = canvas.width;
+const HEIGHT = canvas.height;
+const FLOOR = 438;
+const GRAVITY = 0.72;
+const keys = new Set();
+
+let gameState = "intro";
+let lastTime = 0;
+let elapsed = 0;
+let round = 1;
+let playerWins = 0;
+let enemyWins = 0;
+let shake = 0;
+let particles = [];
+
+let peer = null;
+let connection = null;
+let onlineMode = false;
+let onlineRole = "host";
+let remoteKeys = new Set();
+let lastNetSend = 0;
+let roomCode = "";
+
+const onlineStatus = document.getElementById("onlineStatus");
+const roomInput = document.getElementById("roomInput");
+const createRoomButton = document.getElementById("createRoom");
+const joinRoomButton = document.getElementById("joinRoom");
+
+const PEER_OPTIONS = {
+  debug: 1
+  // PeerJS default ICE configuration includes STUN and TURN relays.
+};
+
+function makeFighter(options) {
+  return {
+    name: options.name,
+    x: options.x,
+    y: FLOOR,
+    vx: 0,
+    vy: 0,
+    width: 68,
+    height: 116,
+    health: 100,
+    facing: options.facing,
+    color: options.color,
+    trim: options.trim,
+    isPlayer: options.isPlayer,
+    localControlled: false,
+    remoteJumpWasDown: false,
+    onGround: true,
+    blocking: false,
+    attack: null,
+    attackCooldown: 0,
+    hurtTime: 0,
+    invulnerable: 0,
+    walkCycle: 0,
+    aiThink: 0,
+    aiMove: 0,
+    aiAction: 0
+  };
+}
+
+let player;
+let enemy;
+let localFighter;
+let remoteFighter;
+let timeLeft = 60;
+
+function resetRound() {
+  const leftFighter = makeFighter({
+    name: "BOLT",
+    x: 245,
+    facing: 1,
+    color: "#31b9ed",
+    trim: "#ffdb57",
+    isPlayer: true
+  });
+
+  const rightFighter = makeFighter({
+    name: "BRAWLER",
+    x: 715,
+    facing: -1,
+    color: "#f15b82",
+    trim: "#ffd16a",
+    isPlayer: false
+  });
+
+  player = leftFighter;
+  enemy = rightFighter;
+
+  const localIsLeft = !onlineMode || onlineRole === "host";
+
+  leftFighter.localControlled = localIsLeft;
+  rightFighter.localControlled = onlineMode && !localIsLeft;
+
+  localFighter = localIsLeft ? leftFighter : rightFighter;
+  remoteFighter = localIsLeft ? rightFighter : leftFighter;
+
+  timeLeft = 60;
+  elapsed = 0;
+  particles = [];
+
+  updateHud();
+}
+
+function startGame() {
+  onlineMode = false;
+  keys.clear();
+  remoteKeys.clear();
+
+  round = 1;
+  playerWins = 0;
+  enemyWins = 0;
+
+  roundLabel.textContent = "ROUND 1";
+
+  resetRound();
+
+  gameState = "playing";
+  message.classList.add("hidden");
+}
+
+function nextRound(winner) {
+  if (winner === "player") {
+    playerWins++;
+  } else {
+    enemyWins++;
+  }
+
+  gameState = "roundEnd";
+
+  const text = winner === "player"
+    ? "BOLT WINS THE ROUND!"
+    : "BRAWLER WINS THE ROUND!";
+
+  message.textContent = text;
+  message.classList.remove("hidden");
+
+  if (playerWins >= 2 || enemyWins >= 2) {
+    gameState = "matchEnd";
+
+    message.textContent = playerWins >= 2
+      ? "YOU ARE THE CHAMPION!"
+      : "BRAWLER TAKES THE MATCH!";
+
+    return;
+  }
+
+  round++;
+  roundLabel.textContent = "ROUND " + round;
+
+  window.setTimeout(() => {
+    if (gameState !== "roundEnd") return;
+
+    resetRound();
+    gameState = "playing";
+    message.classList.add("hidden");
+  }, 1500);
+}
+
+function updateHud() {
+  playerBar.style.width = Math.max(0, player.health) + "%";
+  enemyBar.style.width = Math.max(0, enemy.health) + "%";
+  timerText.textContent = Math.ceil(timeLeft);
+}
+
+function spawnBurst(x, y, color, amount = 10) {
+  for (let i = 0; i < amount; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1.5 + Math.random() * 5;
+
+    particles.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 1,
+      life: 24 + Math.random() * 18,
+      color,
+      size: 3 + Math.random() * 5
+    });
+  }
+}
+
+function spawnBloodBurst(x, y, direction) {
+  // Stylised comic splashes, drawn as small red droplets.
+  const shades = ["#e51d3b", "#ff3654", "#b90f32"];
+
+  for (let i = 0; i < 14; i++) {
+    const angle =
+      (Math.random() * 1.55 - 0.78) * (direction || 1);
+
+    const speed = 2.2 + Math.random() * 5.2;
+
+    particles.push({
+      x: x + (Math.random() - 0.5) * 12,
+      y: y + (Math.random() - 0.5) * 10,
+      vx: Math.cos(angle) * speed,
+      vy: -Math.abs(Math.sin(angle) * speed) -
+        Math.random() * 2,
+      life: 24 + Math.random() * 17,
+      color: shades[Math.floor(Math.random() * shades.length)],
+      size: 2.5 + Math.random() * 4,
+      blood: true
+    });
+  }
+}
+
+function startAttack(fighter, type) {
+  if (
+    gameState !== "playing" ||
+    fighter.attackCooldown > 0 ||
+    fighter.hurtTime > 0
+  ) return;
+
+  fighter.blocking = false;
+
+  fighter.attack = {
+    type,
+    timer: type === "kick" ? 22 : 17,
+    duration: type === "kick" ? 22 : 17,
+    hit: false
+  };
+
+  fighter.attackCooldown = type === "kick" ? 38 : 27;
+}
+
+function jump(fighter) {
+  if (
+    fighter.onGround &&
+    gameState === "playing" &&
+    fighter.hurtTime <= 0
+  ) {
+    fighter.vy = -14.5;
+    fighter.onGround = false;
+    spawnBurst(fighter.x, FLOOR - 5, "#ffffff", 5);
+  }
+}
+
+function attackDamage(attacker, defender) {
+  if (!attacker.attack || attacker.attack.hit) return;
+
+  const attack = attacker.attack;
+  const progress = 1 - attack.timer / attack.duration;
+
+  const active = attack.type === "kick"
+    ? progress > 0.32 && progress < 0.76
+    : progress > 0.28 && progress < 0.72;
+
+  if (!active) return;
+
+  const distance = Math.abs(attacker.x - defender.x);
+  const reach = attack.type === "kick" ? 122 : 96;
+
+  const facingTarget =
+    Math.sign(defender.x - attacker.x) === attacker.facing;
+
+  if (
+    distance < reach &&
+    facingTarget &&
+    Math.abs(attacker.y - defender.y) < 45
+  ) {
+    attack.hit = true;
+
+    const blocked =
+      defender.blocking &&
+      defender.facing === -attacker.facing;
+
+    const damage = blocked
+      ? 3
+      : (attack.type === "kick" ? 14 : 9);
+
+    defender.health = Math.max(0, defender.health - damage);
+    defender.hurtTime = blocked ? 7 : 17;
+    defender.invulnerable = 12;
+
+    defender.vx += attacker.facing * (blocked ? 2 : 6);
+
+    if (!blocked) {
+      defender.vy = -3.5;
+    }
+
+    if (blocked) {
+      spawnBurst(
+        (attacker.x + defender.x) / 2,
+        defender.y - 70,
+        "#a7e7ff",
+        6
+      );
+    } else {
+      spawnBloodBurst(
+        (attacker.x + defender.x) / 2,
+        defender.y - 76,
+        attacker.facing
+      );
+
+      spawnBurst(
+        (attacker.x + defender.x) / 2,
+        defender.y - 70,
+        "#ffe16b",
+        5
+      );
+    }
+
+    shake = blocked ? 2 : 6;
+    updateHud();
+
+    if (defender.health <= 0) {
+      nextRound(attacker === player ? "player" : "enemy");
+    }
+  }
+}
+
+function updateFighter(fighter, opponent, dt) {
+  const step = dt / 16.6667;
+
+  fighter.attackCooldown =
+    Math.max(0, fighter.attackCooldown - step);
+
+  fighter.hurtTime = Math.max(0, fighter.hurtTime - step);
+  fighter.invulnerable =
+    Math.max(0, fighter.invulnerable - step);
+
+  fighter.facing = opponent.x >= fighter.x ? 1 : -1;
+
+  if (fighter.localControlled) {
+    const left = keys.has("a");
+    const right = keys.has("d");
+
+    fighter.blocking =
+      keys.has("l") &&
+      fighter.hurtTime <= 0 &&
+      !fighter.attack;
+
+    if (fighter.hurtTime <= 0 && !fighter.attack) {
+      fighter.vx = fighter.blocking
+        ? 0
+        : (right ? 4.2 : 0) - (left ? 4.2 : 0);
+    }
+
+    if (keys.has("j")) startAttack(fighter, "punch");
+    if (keys.has("k")) startAttack(fighter, "kick");
+
+  } else if (onlineMode) {
+    fighter.blocking =
+      remoteKeys.has("l") &&
+      fighter.hurtTime <= 0 &&
+      !fighter.attack;
+
+    if (fighter.hurtTime <= 0 && !fighter.attack) {
+      const left = remoteKeys.has("a");
+      const right = remoteKeys.has("d");
+
+      fighter.vx = fighter.blocking
+        ? 0
+        : (right ? 4.2 : 0) - (left ? 4.2 : 0);
+    }
+
+    if (remoteKeys.has("j")) startAttack(fighter, "punch");
+    if (remoteKeys.has("k")) startAttack(fighter, "kick");
+
+    const jumpDown = remoteKeys.has("w");
+
+    if (
+      jumpDown &&
+      !fighter.remoteJumpWasDown &&
+      fighter.onGround
+    ) {
+      jump(fighter);
+    }
+
+    fighter.remoteJumpWasDown = jumpDown;
+
+  } else {
+    fighter.aiThink -= step;
+
+    if (fighter.aiThink <= 0) {
+      fighter.aiThink = 10 + Math.random() * 13;
+
+      const distance = Math.abs(opponent.x - fighter.x);
+
+      fighter.aiMove = distance > 145
+        ? Math.sign(opponent.x - fighter.x)
+        : (Math.random() < 0.5 ? -1 : 1);
+
+      fighter.aiAction = Math.random();
+
+      fighter.blocking =
+        distance < 120 && Math.random() < 0.24;
+
+      if (distance < 130 && fighter.aiAction > 0.35) {
+        startAttack(
+          fighter,
+          fighter.aiAction > 0.72 ? "kick" : "punch"
+        );
+      }
+
+      if (distance > 210 && Math.random() < 0.15) {
+        jump(fighter);
+      }
+    }
+
+    if (fighter.hurtTime <= 0 && !fighter.attack) {
+      fighter.vx = fighter.blocking ? 0 : fighter.aiMove * 2.6;
+    }
+  }
+
+  if (fighter.attack) {
+    fighter.attack.timer -= step;
+    fighter.vx *= 0.78;
+
+    attackDamage(fighter, opponent);
+
+    if (fighter.attack && fighter.attack.timer <= 0) {
+      fighter.attack = null;
+    }
+  }
+
+  if (fighter.hurtTime > 0) {
+    fighter.vx *= 0.9;
+  }
+
+  fighter.x += fighter.vx * step;
+  fighter.x = Math.max(55, Math.min(WIDTH - 55, fighter.x));
+
+  fighter.y += fighter.vy * step;
+  fighter.vy += GRAVITY * step;
+
+  if (fighter.y >= FLOOR) {
+    fighter.y = FLOOR;
+    fighter.vy = 0;
+    fighter.onGround = true;
+  } else {
+    fighter.onGround = false;
+  }
+
+  if (Math.abs(fighter.vx) > 0.4) {
+    fighter.walkCycle += step * 0.18;
+  }
+}
+
+function updateParticles(dt) {
+  const step = dt / 16.6667;
+
+  particles = particles.filter(p => p.life > 0);
+
+  for (const p of particles) {
+    p.x += p.vx * step;
+    p.y += p.vy * step;
+    p.vy += 0.18 * step;
+    p.life -= step;
+  }
+}
+
+function update(dt) {
+  // Host is authoritative for all online match physics.
+  if (onlineMode && onlineRole === "guest") return;
+  if (gameState !== "playing") return;
+
+  elapsed += dt;
+  timeLeft = Math.max(0, timeLeft - dt / 1000);
+
+  updateFighter(player, enemy, dt);
+  updateFighter(enemy, player, dt);
+  updateParticles(dt);
+  updateHud();
+
+  if (timeLeft <= 0) {
+    nextRound(
+      player.health >= enemy.health ? "player" : "enemy"
+    );
+  }
+}
+
+function drawBackground() {
+  const sky = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+
+  sky.addColorStop(0, "#65c9ec");
+  sky.addColorStop(0.68, "#c2f0e9");
+  sky.addColorStop(0.69, "#e8bb75");
+  sky.addColorStop(1, "#b77a4e");
+
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  ctx.fillStyle = "#fff7cf";
+  ctx.beginPath();
+  ctx.arc(780, 95, 42, 0, Math.PI * 2);
+  ctx.fill();
+
+  drawCloud(150, 105, 1);
+  drawCloud(490, 72, 0.75);
+  drawCloud(880, 175, 0.8);
+
+  ctx.fillStyle = "#5eaa84";
+  ctx.beginPath();
+  ctx.moveTo(0, 340);
+  ctx.quadraticCurveTo(170, 240, 340, 340);
+  ctx.quadraticCurveTo(540, 245, 720, 340);
+  ctx.quadraticCurveTo(850, 275, 960, 325);
+  ctx.lineTo(960, 438);
+  ctx.lineTo(0, 438);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#e5a75f";
+  ctx.fillRect(0, 438, WIDTH, 102);
+
+  ctx.fillStyle = "#f4cb7d";
+
+  for (let x = 0; x < WIDTH; x += 52) {
+    ctx.fillRect(x + 8, 455 + (x % 3) * 7, 24, 4);
+  }
+
+  ctx.fillStyle = "#7b4b43";
+  ctx.fillRect(0, 530, WIDTH, 10);
+}
+
+function drawCloud(x, y, scale) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+
+  ctx.fillStyle = "#ffffffcc";
+  ctx.beginPath();
+  ctx.arc(-25, 5, 22, 0, Math.PI * 2);
+  ctx.arc(0, -7, 29, 0, Math.PI * 2);
+  ctx.arc(30, 5, 22, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawFighter(f) {
+  ctx.save();
+  ctx.translate(f.x, f.y);
+  ctx.scale(f.facing, 1);
+
+  const bob = f.onGround ? Math.sin(f.walkCycle) * 2 : 0;
+  const hurt = f.hurtTime > 0;
+  const ink = "#17172b";
+  const suit = hurt ? "#fff2a6" : f.color;
+  const attack = f.attack;
+
+  const kickPose =
+    attack &&
+    attack.type === "kick" &&
+    attack.timer < attack.duration * 0.75;
+
+  const punchPose =
+    attack &&
+    attack.type === "punch" &&
+    attack.timer < attack.duration * 0.75;
+
+  ctx.translate(0, bob);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // Ground shadow.
+  ctx.fillStyle = "#523c43";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 31, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Legs.
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 13;
+
+  if (kickPose) {
+    ctx.beginPath();
+    ctx.moveTo(0, -39);
+    ctx.lineTo(50, -47);
+    ctx.stroke();
+
+    ctx.strokeStyle = f.trim;
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.moveTo(45, -47);
+    ctx.lineTo(62, -47);
+    ctx.stroke();
+
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 13;
+    ctx.beginPath();
+    ctx.moveTo(-2, -39);
+    ctx.lineTo(-8, -8);
+    ctx.stroke();
+
+  } else {
+    const stride = Math.sin(f.walkCycle) * 8;
+
+    ctx.beginPath();
+    ctx.moveTo(-7, -42);
+    ctx.lineTo(-13 + stride, -8);
+    ctx.moveTo(7, -42);
+    ctx.lineTo(13 - stride, -8);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = f.trim;
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(-19, -7);
+  ctx.lineTo(-7, -7);
+  ctx.moveTo(7, -7);
+  ctx.lineTo(20, -7);
+  ctx.stroke();
+
+  // Torso.
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 18;
+  ctx.beginPath();
+  ctx.moveTo(0, -91);
+  ctx.lineTo(0, -42);
+  ctx.stroke();
+
+  ctx.strokeStyle = suit;
+  ctx.lineWidth = 12;
+  ctx.beginPath();
+  ctx.moveTo(0, -88);
+  ctx.lineTo(0, -48);
+  ctx.stroke();
+
+  ctx.strokeStyle = f.trim;
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(-8, -70);
+  ctx.lineTo(8, -70);
+  ctx.stroke();
+
+  // Arms.
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 12;
+
+  if (punchPose) {
+    ctx.beginPath();
+    ctx.moveTo(0, -82);
+    ctx.lineTo(49, -84);
+    ctx.stroke();
+
+    ctx.fillStyle = f.trim;
+    ctx.beginPath();
+    ctx.arc(54, -84, 11, 0, Math.PI * 2);
+    ctx.fill();
+
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(0, -82);
+    ctx.lineTo(
+      f.blocking ? 26 : 28,
+      f.blocking ? -105 : -58
+    );
+    ctx.moveTo(0, -82);
+    ctx.lineTo(-27, -58);
+    ctx.stroke();
+
+    ctx.fillStyle = f.trim;
+    ctx.beginPath();
+    ctx.arc(
+      f.blocking ? 26 : 28,
+      f.blocking ? -105 : -58,
+      9,
+      0,
+      Math.PI * 2
+    );
+    ctx.arc(-27, -58, 9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Head.
+  ctx.fillStyle = "#fffdf5";
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(0, -119, 25, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = f.color;
+  ctx.beginPath();
+  ctx.arc(-2, -130, 23, Math.PI, Math.PI * 2);
+  ctx.lineTo(20, -121);
+  ctx.quadraticCurveTo(0, -143, -22, -121);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = ink;
+  ctx.beginPath();
+  ctx.arc(8, -119, 3.5, 0, Math.PI * 2);
+  ctx.arc(-5, -119, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(2, -109, 7, 0.15, 1.5);
+  ctx.stroke();
+
+  if (f.blocking) {
+    ctx.strokeStyle = "#a8edff";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(0, -76, 54, -1.25, 1.25);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life / 35);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+
+    if (p.blood) {
+      ctx.ellipse(
+        p.x,
+        p.y,
+        p.size * 0.72,
+        p.size * 1.35,
+        Math.atan2(p.vy, p.vx),
+        0,
+        Math.PI * 2
+      );
+    } else {
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    }
+
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+}
+
+function draw() {
+  ctx.save();
+
+  if (shake > 0) {
+    ctx.translate(
+      (Math.random() - 0.5) * shake,
+      (Math.random() - 0.5) * shake
+    );
+
+    shake *= 0.82;
+
+    if (shake < 0.3) shake = 0;
+  }
+
+  drawBackground();
+
+  if (player && enemy) {
+    drawFighter(player);
+    drawFighter(enemy);
+  }
+
+  drawParticles();
+  ctx.restore();
+}
+
+function loop(timestamp) {
+  const dt = Math.min(34, timestamp - (lastTime || timestamp));
+
+  lastTime = timestamp;
+
+  update(dt);
+  sendOnlineInput(timestamp);
+  sendOnlineState(timestamp);
+  draw();
+
+  requestAnimationFrame(loop);
+}
+
+function setKey(event, down) {
+  const raw = event.key.toLowerCase();
+
+  const aliases = {
+    arrowleft: "a",
+    arrowright: "d",
+    arrowup: "w",
+    " ": "w"
+  };
+
+  const key = aliases[raw] || raw;
+  const supported = ["a", "d", "w", "j", "k", "l"];
+
+  if (supported.includes(key)) {
+    event.preventDefault();
+
+    if (down) keys.add(key);
+    else keys.delete(key);
+  }
+
+  if (
+    down &&
+    key === "w" &&
+    localFighter &&
+    (!onlineMode || onlineRole === "host")
+  ) {
+    jump(localFighter);
+  }
+}
+
+let lastStateSend = 0;
+
+function setOnlineStatus(text) {
+  onlineStatus.textContent = text;
+}
+
+function packFighter(fighter) {
+  return {
+    x: fighter.x,
+    y: fighter.y,
+    vx: fighter.vx,
+    vy: fighter.vy,
+    health: fighter.health,
+    facing: fighter.facing,
+    blocking: fighter.blocking,
+    attack: fighter.attack ? { ...fighter.attack } : null,
+    hurtTime: fighter.hurtTime,
+    invulnerable: fighter.invulnerable,
+    onGround: fighter.onGround,
+    walkCycle: fighter.walkCycle
+  };
+}
+
+function applyFighterSnapshot(fighter, state) {
+  if (!state) return;
+
+  fighter.x = state.x;
+  fighter.y = state.y;
+  fighter.vx = state.vx;
+  fighter.vy = state.vy;
+  fighter.health = state.health;
+  fighter.facing = state.facing;
+  fighter.blocking = state.blocking;
+  fighter.attack = state.attack;
+  fighter.hurtTime = state.hurtTime;
+  fighter.invulnerable = state.invulnerable;
+  fighter.onGround = state.onGround;
+  fighter.walkCycle = state.walkCycle;
+}
+
+function sendOnlineState(timestamp, force = false) {
+  if (
+    !onlineMode ||
+    onlineRole !== "host" ||
+    !connection ||
+    !connection.open
+  ) return;
+
+  if (!force && timestamp - lastStateSend < 50) return;
+
+  lastStateSend = timestamp;
+
+  const state = {
+    left: packFighter(player),
+    right: packFighter(enemy),
+    timeLeft,
+    round,
+    playerWins,
+    enemyWins,
+    gameState,
+    message: message.textContent,
+    messageHidden: message.classList.contains("hidden"),
+    particles: particles.slice(-55).map(p => ({
+      x: p.x,
+      y: p.y,
+      vx: p.vx,
+      vy: p.vy,
+      life: p.life,
+      color: p.color,
+      size: p.size,
+      blood: !!p.blood
+    }))
+  };
+
+  connection.send({ type: "state", state });
+}
+
+function applyOnlineState(state) {
+  if (onlineRole !== "guest" || !state) return;
+
+  applyFighterSnapshot(player, state.left);
+  applyFighterSnapshot(enemy, state.right);
+
+  timeLeft = state.timeLeft;
+  round = state.round;
+  playerWins = state.playerWins;
+  enemyWins = state.enemyWins;
+  gameState = state.gameState;
+
+  roundLabel.textContent = "ROUND " + round;
+  message.textContent = state.message || "";
+
+  if (state.messageHidden) {
+    message.classList.add("hidden");
+  } else {
+    message.classList.remove("hidden");
+  }
+
+  particles = Array.isArray(state.particles)
+    ? state.particles
+    : [];
+
+  updateHud();
+}
+
+function clearPeerConnection() {
+  onlineMode = false;
+  remoteKeys.clear();
+
+  if (connection) {
+    const oldConnection = connection;
+    connection = null;
+    oldConnection.close();
+  }
+
+  if (peer) {
+    const oldPeer = peer;
+    peer = null;
+    oldPeer.destroy();
+  }
+}
+
+function handlePeerError(error) {
+  const type = error && error.type ? error.type : "unknown";
+
+  if (type === "unavailable-id") {
+    setOnlineStatus(
+      "That room code is already in use. Create another room."
+    );
+
+  } else if (type === "peer-unavailable") {
+    setOnlineStatus(
+      "Room not found. Check the code and make sure the host is online."
+    );
+
+  } else if (
+    type === "network" ||
+    type === "server-error" ||
+    type === "socket-error"
+  ) {
+    setOnlineStatus(
+      "Could not reach PeerJS. Check your internet connection and try again."
+    );
+
+  } else if (type === "webrtc") {
+    setOnlineStatus(
+      "A direct connection failed. This network may need a TURN relay."
+    );
+
+  } else {
+    setOnlineStatus("Connection error: " + type);
+  }
+}
+
+function setupPeerConnection(conn) {
+  if (connection && connection !== conn) {
+    conn.close();
+    return;
+  }
+
+  connection = conn;
+
+  conn.on("open", () => {
+    if (connection !== conn) return;
+
+    onlineMode = true;
+    keys.clear();
+    remoteKeys.clear();
+
+    resetRound();
+
+    round = 1;
+    playerWins = 0;
+    enemyWins = 0;
+
+    gameState = "playing";
+    message.textContent = "FIGHT!";
+    message.classList.remove("hidden");
+
+    if (onlineRole === "host") {
+      setOnlineStatus("Friend connected! You are BOLT (left).");
+      sendOnlineState(performance.now(), true);
+    } else {
+      setOnlineStatus("Connected! You are BRAWLER (right).");
+    }
+  });
+
+  conn.on("data", data => {
+    if (
+      connection !== conn ||
+      !data ||
+      typeof data !== "object"
+    ) return;
+
+    if (onlineRole === "host" && data.type === "input") {
+      const allowed = new Set([
+        "a", "d", "w", "j", "k", "l"
+      ]);
+
+      const safeKeys = Array.isArray(data.keys)
+        ? data.keys.filter(key => allowed.has(key))
+        : [];
+
+      remoteKeys = new Set(safeKeys);
+    }
+
+    if (onlineRole === "guest" && data.type === "state") {
+      applyOnlineState(data.state);
+    }
+  });
+
+  conn.on("close", () => {
+    if (connection !== conn) return;
+
+    connection = null;
+    onlineMode = false;
+    remoteKeys.clear();
+    gameState = "intro";
+
+    message.textContent = "FRIEND LEFT";
+    message.classList.remove("hidden");
+
+    setOnlineStatus(
+      "Your friend disconnected. Create or join another room."
+    );
+  });
+
+  conn.on("error", () => {
+    if (connection === conn) {
+      setOnlineStatus("The peer connection was interrupted.");
+    }
+  });
+}
+
+function createRoom() {
+  clearPeerConnection();
+
+  onlineRole = "host";
+
+  roomCode = "TC" + Array.from({ length: 6 }, () =>
+    "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[
+      Math.floor(Math.random() * 32)
+    ]
+  ).join("");
+
+  if (typeof Peer === "undefined") {
+    setOnlineStatus(
+      "PeerJS did not load. Check your internet connection and reload."
+    );
+    return;
+  }
+
+  setOnlineStatus("Creating your room...");
+  peer = new Peer(roomCode, PEER_OPTIONS);
+
+  peer.on("open", id => {
+    roomCode = id;
+    roomInput.value = id;
+
+    setOnlineStatus(
+      "Room " + id + " created. Share the code with your friend."
+    );
+  });
+
+  peer.on("connection", conn => {
+    if (connection) {
+      conn.close();
+      return;
+    }
+
+    setupPeerConnection(conn);
+  });
+
+  peer.on("error", handlePeerError);
+
+  peer.on("disconnected", () => {
+    setOnlineStatus(
+      "PeerJS directory disconnected. Recreate the room to continue."
+    );
+  });
+}
+
+function joinRoom() {
+  clearPeerConnection();
+
+  const code = roomInput.value.trim().toUpperCase();
+
+  if (!/^TC[A-Z0-9]{6}$/.test(code)) {
+    setOnlineStatus(
+      "Enter the 8-character room code, including TC."
+    );
+    return;
+  }
+
+  if (typeof Peer === "undefined") {
+    setOnlineStatus(
+      "PeerJS did not load. Check your internet connection and reload."
+    );
+    return;
+  }
+
+  onlineRole = "guest";
+  roomCode = code;
+
+  setOnlineStatus("Looking for room " + code + "...");
+
+  peer = new Peer(undefined, PEER_OPTIONS);
+
+  peer.on("open", () => {
+    if (!peer || peer.destroyed) return;
+
+    const conn = peer.connect(code, {
+      reliable: true
+    });
+
+    setupPeerConnection(conn);
+  });
+
+  peer.on("error", handlePeerError);
+
+  peer.on("disconnected", () => {
+    setOnlineStatus(
+      "PeerJS directory disconnected. Try joining again."
+    );
+  });
+}
+
+function sendOnlineInput(timestamp) {
+  if (
+    !onlineMode ||
+    onlineRole !== "guest" ||
+    gameState !== "playing" ||
+    !connection ||
+    !connection.open
+  ) return;
+
+  if (timestamp - lastNetSend < 35) return;
+
+  lastNetSend = timestamp;
+
+  const controls = ["a", "d", "w", "j", "k", "l"];
+
+  connection.send({
+    type: "input",
+    keys: controls.filter(key => keys.has(key))
+  });
+}
+
+createRoomButton.addEventListener("click", createRoom);
+joinRoomButton.addEventListener("click", joinRoom);
+
+window.addEventListener(
+  "keydown",
+  event => setKey(event, true)
+);
+
+window.addEventListener(
+  "keyup",
+  event => setKey(event, false)
+);
+
+restartButton.addEventListener("click", () => {
+  clearPeerConnection();
+  startGame();
+
+  setOnlineStatus(
+    "CPU match started. Create a room to play with a friend."
+  );
+});
+
+document.querySelectorAll(".mobile-controls button").forEach(button => {
+  const key = button.dataset.key;
+
+  const press = event => {
+    event.preventDefault();
+    keys.add(key);
+
+    if (
+      key === "w" &&
+      localFighter &&
+      (!onlineMode || onlineRole === "host")
+    ) {
+      jump(localFighter);
+    }
+  };
+
+  const release = event => {
+    event.preventDefault();
+    keys.delete(key);
+  };
+
+  button.addEventListener("pointerdown", press);
+  button.addEventListener("pointerup", release);
+  button.addEventListener("pointerleave", release);
+  button.addEventListener("pointercancel", release);
+});
+
+resetRound();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
